@@ -3,7 +3,8 @@ categories:
   t: tech
   h: health
   p: personal-care
-clothing: []
+clothing:
+- c-pants-sport-n-01
 tech: []
 health: []
 personal-care: []
