@@ -183,11 +183,19 @@ def add_item(data):
 
 
 def manage_categories(data):
-    print(fmt("\nCategory management:", BOLD, CYAN))
+    # Backward-compat wrapper; use the unified categories menu
+    categories_menu(data)
+
+
+def categories_menu(data):
+    print(fmt("\nCategories:", BOLD, CYAN))
     print("1. Add category")
     print("2. Delete category")
-    choice = input("Choose option: ").strip()
+    print("3. Modify category")
+    choice = input("Choose option (Enter to cancel): ").strip()
 
+    if choice == "":
+        return
     if choice == "1":
         key = input("Category key (one letter): ").strip().lower()
         name = input("Category name: ").strip()
@@ -196,12 +204,149 @@ def manage_categories(data):
             if name not in data:
                 data[name] = []
             print(fmt(f"Category added: {key} → {name}", GREEN))
+        else:
+            print(fmt("Key and name are required.", YELLOW))
     elif choice == "2":
         key = choose_category(data)
         if key:
             name = data["categories"].pop(key)
             data.pop(name, None)
             print(fmt(f"Category {key} → {name} deleted.", GREEN))
+        else:
+            print(fmt("No category chosen.", YELLOW))
+    elif choice == "3":
+        old_key = choose_category(data)
+        if not old_key:
+            print(fmt("No category chosen.", YELLOW))
+            return
+        old_name = data["categories"][old_key]
+        print(fmt(f"\nModify category {old_key} → {old_name}", BOLD, CYAN))
+        new_key = input(f"New key (Enter to keep '{old_key}'): ").strip().lower() or old_key
+        new_name = input(f"New name (Enter to keep '{old_name}'): ").strip() or old_name
+
+        # Validate collisions
+        if new_key != old_key and new_key in data["categories"]:
+            print(fmt("A category with this key already exists.", RED))
+            return
+        if new_name != old_name and new_name in data and new_name not in (old_name,):
+            print(fmt("A category with this name already exists.", RED))
+            return
+
+        # Update name (list key) if changed
+        if new_name != old_name:
+            data.setdefault(new_name, data.get(old_name, []))
+            if old_name in data and new_name != old_name:
+                # Move items to new list key
+                items_list = data.pop(old_name)
+                data[new_name] = items_list
+
+        # Update key mapping
+        if new_key != old_key or new_name != old_name:
+            # Replace mapping
+            data["categories"].pop(old_key)
+            data["categories"][new_key] = new_name
+
+        # If key changed, update all item codes under this category
+        if new_key != old_key:
+            items = data.get(new_name, [])
+            updated = []
+            for code in items:
+                parts = code.split("-", 1)
+                if parts:
+                    if len(parts) == 1:
+                        updated.append(new_key)
+                    else:
+                        updated.append(new_key + "-" + parts[1])
+                else:
+                    updated.append(code)
+            data[new_name] = updated
+        print(fmt("Category modified.", GREEN))
+    else:
+        print(fmt("Invalid choice.", YELLOW))
+
+
+def manage_items(data):
+    """Edit, move, or delete existing items."""
+    # Pick a category first
+    cat_key = choose_category(data)
+    if not cat_key:
+        print(fmt("No category chosen.", YELLOW))
+        return
+
+    cat_name = data["categories"][cat_key]
+    items = data.get(cat_name, [])
+
+    if not items:
+        print(fmt(f"No items in '{cat_name}'.", YELLOW))
+        return
+
+    print(fmt(f"\nItems in {cat_name}:", BOLD, CYAN))
+    for i, code in enumerate(items, 1):
+        print(f"  {i}. {fmt(code, GREEN)}")
+
+    sel = input("Choose item number to modify (Enter to cancel): ").strip()
+    if not sel:
+        return
+    if not sel.isdigit() or not (1 <= int(sel) <= len(items)):
+        print(fmt("Invalid selection.", YELLOW))
+        return
+
+    idx = int(sel) - 1
+    code = items[idx]
+
+    print(fmt(f"\nModify item: {code}", BOLD, CYAN))
+    print("1. Edit code")
+    print("2. Move to another category")
+    print("3. Delete item")
+    action = input("Choose action: ").strip()
+
+    if action == "1":
+        new_code = input("New code (Enter to keep current): ").strip()
+        if new_code:
+            items[idx] = new_code
+            print(fmt("Item updated.", GREEN))
+        else:
+            print(fmt("No changes made.", YELLOW))
+    elif action == "2":
+        new_cat_key = choose_category(data)
+        if not new_cat_key:
+            print(fmt("No category chosen.", YELLOW))
+            return
+        new_cat_name = data["categories"][new_cat_key]
+        if new_cat_name == cat_name:
+            print(fmt("Item already in this category.", YELLOW))
+            return
+        # Move item list-wise and update code prefix to new category key
+        parts = code.split("-")
+        if parts:
+            parts[0] = new_cat_key
+        new_code = "-".join(parts)
+        # Remove from old list
+        items.pop(idx)
+        # Add to new list
+        data.setdefault(new_cat_name, []).append(new_code)
+        print(fmt(f"Moved to {new_cat_name} as {new_code}.", GREEN))
+    elif action == "3":
+        items.pop(idx)
+        print(fmt("Item deleted.", GREEN))
+    else:
+        print(fmt("Unknown action.", YELLOW))
+
+
+def items_menu(data):
+    """Unified items entry: add new items or manage existing ones."""
+    print(fmt("\nItems:", BOLD, CYAN))
+    print("1. Add item")
+    print("2. Manage existing items")
+    choice = input("Choose option (Enter to cancel): ").strip()
+    if choice == "":
+        return
+    if choice == "1":
+        add_item(data)
+    elif choice == "2":
+        manage_items(data)
+    else:
+        print(fmt("Invalid choice.", YELLOW))
 
 
 def main():
@@ -211,8 +356,8 @@ def main():
 
     while True:
         print(fmt("=== personal-belongings manager ===", BOLD, CYAN))
-        print("1. Add item")
-        print("2. Manage categories")
+        print("1. Items")
+        print("2. Categories")
         print("3. Show items")
         print("4. Exit")
         choice = input("Choose option: ").strip()
@@ -222,10 +367,10 @@ def main():
             break
 
         if choice == "1":
-            add_item(data)
+            items_menu(data)
             save_items(data)
         elif choice == "2":
-            manage_categories(data)
+            categories_menu(data)
             save_items(data)
         elif choice == "3":
             clear_screen()
